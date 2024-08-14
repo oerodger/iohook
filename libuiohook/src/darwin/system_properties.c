@@ -1,5 +1,5 @@
 /* libUIOHook: Cross-platfrom userland keyboard and mouse hooking.
- * Copyright (C) 2006-2017 Alexander Barker.  All Rights Received.
+ * Copyright (C) 2006-2016 Alexander Barker.  All Rights Received.
  * https://github.com/kwhat/libuiohook/
  *
  * libUIOHook is free software: you can redistribute it and/or modify
@@ -35,10 +35,6 @@
 
 #include "logger.h"
 #include "input_helper.h"
-
-#ifdef USE_IOKIT
-static io_connect_t connection;
-#endif
 
 /* The following function was contributed by Anthony Liguori Jan 18 2015.
  * https://github.com/kwhat/libuiohook/pull/18
@@ -157,28 +153,37 @@ UIOHOOK_API long int hook_get_auto_repeat_rate() {
 
 	#ifdef USE_IOKIT
 	if (!successful) {
-		IOByteCount size = sizeof(rate);
+		io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
+		if (service) {
+			kern_return_t kren_ret = kIOReturnError;
+			io_connect_t connection;
 
-		kern_return_t status = IOHIDGetParameter(connection, CFSTR(kIOHIDKeyRepeatKey), (IOByteCount) sizeof(rate), &rate, &size);
-		if (status == kIOReturnSuccess) {
-			/* This is in some undefined unit of time that if we happen
-			 * to multiply by 900 gives us the time in milliseconds. We
-			 * add 0.5 to the result so that when we cast to long we
-			 * actually get a rounded result.  Saves the math.h depend.
-			 *
-			 *    33,333,333.0 / 1000.0 / 1000.0 / 1000.0 == 0.033333333	* Fast *
-			 *   100,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.1
-			 *   200,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.2
-			 *   500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.5
-			 * 1,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1
-			 * 1,500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1.5
-			 * 2,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 2				* Slow *
-			 */
-			value = (long) (900.0 * ((double) rate) / 1000.0 / 1000.0 / 1000.0 + 0.5);
-			successful = true;
+			kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
+			if (kren_ret == kIOReturnSuccess) {
+				IOByteCount size = sizeof(rate);
 
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
-					__FUNCTION__, __LINE__, value);
+				kren_ret = IOHIDGetParameter(connection, CFSTR(kIOHIDKeyRepeatKey), (IOByteCount) sizeof(rate), &rate, &size);
+				if (kren_ret == kIOReturnSuccess) {
+					/* This is in some undefined unit of time that if we happen
+					 * to multiply by 900 gives us the time in milliseconds. We
+					 * add 0.5 to the result so that when we cast to long we
+					 * actually get a rounded result.  Saves the math.h depend.
+					 *
+					 *    33,333,333.0 / 1000.0 / 1000.0 / 1000.0 == 0.033333333	* Fast *
+					 *   100,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.1
+  					 *   200,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.2
+  					 *   500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.5
+					 * 1,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1
+					 * 1,500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1.5
+					 * 2,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 2				* Slow *
+					 */
+					value = (long) (900.0 * ((double) rate) / 1000.0 / 1000.0 / 1000.0 + 0.5);
+					successful = true;
+
+					logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
+							__FUNCTION__, __LINE__, value);
+				}
+			}
 		}
 	}
 	#endif
@@ -230,28 +235,37 @@ UIOHOOK_API long int hook_get_auto_repeat_delay() {
 
 	#ifdef USE_IOKIT
 	if (!successful) {
-		IOByteCount size = sizeof(delay);
+		io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
+		if (service) {
+			kern_return_t kren_ret = kIOReturnError;
+			io_connect_t connection;
 
-		kern_return_t kren_ret = IOHIDGetParameter(connection, CFSTR(kIOHIDInitialKeyRepeatKey), (IOByteCount) sizeof(delay), &delay, &size);
-		if (kren_ret == kIOReturnSuccess) {
-			/* This is in some undefined unit of time that if we happen
-			 * to multiply by 900 gives us the time in milliseconds. We
-			 * add 0.5 to the result so that when we cast to long we
-			 * actually get a rounded result.  Saves the math.h depend.
-			 *
-			 *    33,333,333.0 / 1000.0 / 1000.0 / 1000.0 == 0.033333333	* Fast *
-			 *   100,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.1
-			 *   200,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.2
-			 *   500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.5
-			 * 1,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1
-			 * 1,500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1.5
-			 * 2,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 2				* Slow *
-			 */
-			value = (long) (900.0 * ((double) delay) / 1000.0 / 1000.0 / 1000.0 + 0.5);
-			successful = true;
+			kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
+			if (kren_ret == kIOReturnSuccess) {
+				IOByteCount size = sizeof(delay);
 
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
-					__FUNCTION__, __LINE__, value);
+				kren_ret = IOHIDGetParameter(connection, CFSTR(kIOHIDInitialKeyRepeatKey), (IOByteCount) sizeof(delay), &delay, &size);
+				if (kren_ret == kIOReturnSuccess) {
+					/* This is in some undefined unit of time that if we happen
+					 * to multiply by 900 gives us the time in milliseconds. We
+					 * add 0.5 to the result so that when we cast to long we
+					 * actually get a rounded result.  Saves the math.h depend.
+					 *
+					 *    33,333,333.0 / 1000.0 / 1000.0 / 1000.0 == 0.033333333	* Fast *
+					 *   100,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.1
+  					 *   200,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.2
+  					 *   500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 0.5
+					 * 1,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1
+					 * 1,500,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 1.5
+					 * 2,000,000,000.0 / 1000.0 / 1000.0 / 1000.0 == 2				* Slow *
+					 */
+					value = (long) (900.0 * ((double) delay) / 1000.0 / 1000.0 / 1000.0 + 0.5);
+					successful = true;
+
+					logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
+							__FUNCTION__, __LINE__, value);
+				}
+			}
 		}
 	}
 	#endif
@@ -303,24 +317,36 @@ UIOHOOK_API long int hook_get_pointer_acceleration_multiplier() {
 
 	#ifdef USE_IOKIT
 	if (!successful) {
-		kern_return_t kren_ret = IOHIDGetAccelerationWithKey(connection, CFSTR(kIOHIDMouseAccelerationType), &multiplier);
-		if (kren_ret == kIOReturnSuccess) {
-			// Calculate the greatest common factor.
+		io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
 
-			unsigned long denominator = 1000000, d = denominator;
-			unsigned long numerator = multiplier * denominator, gcf = numerator;
+		if (service) {
+			kern_return_t kren_ret = kIOReturnError;
+			io_connect_t connection;
 
-			while (d != 0) {
-				unsigned long i = gcf % d;
-				gcf = d;
-				d = i;
+			kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
+			if (kren_ret == kIOReturnSuccess) {
+				// IOByteCount size = sizeof(multiplier);
+
+				kren_ret = IOHIDGetAccelerationWithKey(connection, CFSTR(kIOHIDMouseAccelerationType), &multiplier);
+				if (kren_ret == kIOReturnSuccess) {
+					// Calculate the greatest common factor.
+
+					unsigned long denominator = 1000000, d = denominator;
+					unsigned long numerator = multiplier * denominator, gcf = numerator;
+
+					while (d != 0) {
+						unsigned long i = gcf % d;
+						gcf = d;
+						d = i;
+					}
+
+					value = denominator / gcf;
+					successful = true;
+
+					logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetAccelerationWithKey: %li.\n",
+							__FUNCTION__, __LINE__, value);
+				}
 			}
-
-			value = denominator / gcf;
-			successful = true;
-
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetAccelerationWithKey: %li.\n",
-					__FUNCTION__, __LINE__, value);
 		}
 	}
 	#endif
@@ -377,24 +403,36 @@ UIOHOOK_API long int hook_get_pointer_sensitivity() {
 
 	#ifdef USE_IOKIT
 	if (!successful) {
-		kern_return_t kren_ret = IOHIDGetAccelerationWithKey(connection, CFSTR(kIOHIDMouseAccelerationType), &sensitivity);
-		if (kren_ret == kIOReturnSuccess) {
-			// Calculate the greatest common factor.
+		io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
 
-			unsigned long denominator = 1000000, d = denominator;
-			unsigned long numerator = sensitivity * denominator, gcf = numerator;
+		if (service) {
+			kern_return_t kren_ret = kIOReturnError;
+			io_connect_t connection;
 
-			while (d != 0) {
-				unsigned long i = gcf % d;
-				gcf = d;
-				d = i;
+			kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
+			if (kren_ret == kIOReturnSuccess) {
+				// IOByteCount size = sizeof(multiplier);
+
+				kren_ret = IOHIDGetAccelerationWithKey(connection, CFSTR(kIOHIDMouseAccelerationType), &sensitivity);
+				if (kren_ret == kIOReturnSuccess) {
+					// Calculate the greatest common factor.
+
+					unsigned long denominator = 1000000, d = denominator;
+					unsigned long numerator = sensitivity * denominator, gcf = numerator;
+
+					while (d != 0) {
+						unsigned long i = gcf % d;
+						gcf = d;
+						d = i;
+					}
+
+					value = numerator / gcf;
+					successful = true;
+
+					logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetAccelerationWithKey: %li.\n",
+							__FUNCTION__, __LINE__, value);
+				}
 			}
-
-			value = numerator / gcf;
-			successful = true;
-
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetAccelerationWithKey: %li.\n",
-					__FUNCTION__, __LINE__, value);
 		}
 	}
 	#endif
@@ -415,20 +453,29 @@ UIOHOOK_API long int hook_get_multi_click_time() {
 
 	#ifdef USE_IOKIT
 	if (!successful) {
-		IOByteCount size = sizeof(time);
+		io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
+		if (service) {
+			kern_return_t kren_ret = kIOReturnError;
+			io_connect_t connection;
 
-		kern_return_t kren_ret = IOHIDGetParameter(connection, CFSTR(kIOHIDClickTimeKey), (IOByteCount) sizeof(time), &time, &size);
-		if (kren_ret == kIOReturnSuccess) {
-			/* This is in some undefined unit of time that if we happen
-			 * to multiply by 900 gives us the time in milliseconds. We
-			 * add 0.5 to the result so that when we cast to long we
-			 * actually get a rounded result.  Saves the math.h depend.
-			 */
-			value = (long) (900.0 * ((double) time) / 1000.0 / 1000.0 / 1000.0 + 0.5);
-			successful = true;
+			kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
+			if (kren_ret == kIOReturnSuccess) {
+				IOByteCount size = sizeof(time);
 
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
-					__FUNCTION__, __LINE__, value);
+				kren_ret = IOHIDGetParameter(connection, CFSTR(kIOHIDClickTimeKey), (IOByteCount) sizeof(time), &time, &size);
+				if (kren_ret == kIOReturnSuccess) {
+					/* This is in some undefined unit of time that if we happen
+					 * to multiply by 900 gives us the time in milliseconds. We
+					 * add 0.5 to the result so that when we cast to long we
+					 * actually get a rounded result.  Saves the math.h depend.
+					 */
+					value = (long) (900.0 * ((double) time) / 1000.0 / 1000.0 / 1000.0 + 0.5);
+					successful = true;
+
+					logger(LOG_LEVEL_INFO,	"%s [%u]: IOHIDGetParameter: %li.\n",
+							__FUNCTION__, __LINE__, value);
+				}
+			}
 		}
 	}
 	#endif
@@ -479,17 +526,6 @@ UIOHOOK_API long int hook_get_multi_click_time() {
 // Create a shared object constructor.
 __attribute__ ((constructor))
 void on_library_load() {
-	#ifdef USE_IOKIT
-	io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass));
-	if (service) {
-		kern_return_t kren_ret = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &connection);
-		if (kren_ret != kIOReturnSuccess) {
-			logger(LOG_LEVEL_INFO,	"%s [%u]: IOServiceOpen failure (%#X)!\n",
-					__FUNCTION__, __LINE__, kren_ret);
-		}
-	}
-	#endif
-
 	// Initialize Native Input Functions.
 	load_input_helper();
 }
@@ -502,14 +538,4 @@ void on_library_unload() {
 
 	// Cleanup native input functions.
 	unload_input_helper();
-
-	#ifdef USE_IOKIT
-	if (connection) {
-		kern_return_t kren_ret = IOServiceClose(connection);
-    	if (kren_ret != kIOReturnSuccess) {
-    		logger(LOG_LEVEL_INFO,	"%s [%u]: IOServiceClose failure (%#X) %#X!\n",
-    				__FUNCTION__, __LINE__, kren_ret, kIOReturnError);
-    	}
-	}
-	#endif
 }

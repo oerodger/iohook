@@ -1,5 +1,5 @@
 /* libUIOHook: Cross-platfrom userland keyboard and mouse hooking.
- * Copyright (C) 2006-2017 Alexander Barker.  All Rights Received.
+ * Copyright (C) 2006-2016 Alexander Barker.  All Rights Received.
  * https://github.com/kwhat/libuiohook/
  *
  * libUIOHook is free software: you can redistribute it and/or modify
@@ -44,23 +44,44 @@ static KeyboardLayoutRef prev_keyboard_layout = NULL;
 static TISInputSourceRef prev_keyboard_layout = NULL;
 #endif
 
+#ifdef USE_WEAK_IMPORT
+// Required to dynamically check for AXIsProcessTrustedWithOptions availability.
+extern Boolean AXIsProcessTrustedWithOptions(CFDictionaryRef options) __attribute__((weak_import));
+extern CFStringRef kAXTrustedCheckOptionPrompt __attribute__((weak_import));
+#else
+static Boolean (*AXIsProcessTrustedWithOptions_t)(CFDictionaryRef);
+#endif
+
 bool is_accessibility_enabled() {
 	bool is_enabled = false;
 
+	#ifdef USE_WEAK_IMPORT
+	// Check and make sure assistive devices is enabled.
+	if (AXIsProcessTrustedWithOptions != NULL) {
+		// New accessibility API 10.9 and later.
+		const void * keys[] = { kAXTrustedCheckOptionPrompt };
+		const void * values[] = { kCFBooleanTrue };
+
+		CFDictionaryRef options = CFDictionaryCreate(
+				kCFAllocatorDefault,
+				keys,
+				values,
+				sizeof(keys) / sizeof(*keys),
+				&kCFCopyStringDictionaryKeyCallBacks,
+				&kCFTypeDictionaryValueCallBacks);
+
+		is_enabled = AXIsProcessTrustedWithOptions(options);
+	}
+	#else
 	// Dynamically load the application services framework for examination.
-	Boolean (*AXIsProcessTrustedWithOptions_t)(CFDictionaryRef);
 	*(void **) (&AXIsProcessTrustedWithOptions_t) = dlsym(RTLD_DEFAULT, "AXIsProcessTrustedWithOptions");
 	const char *dlError = dlerror();
-	if (AXIsProcessTrustedWithOptions_t != NULL) {
+	if (AXIsProcessTrustedWithOptions_t != NULL && dlError == NULL) {
 		// Check for property CFStringRef kAXTrustedCheckOptionPrompt
 		void ** kAXTrustedCheckOptionPrompt_t = dlsym(RTLD_DEFAULT, "kAXTrustedCheckOptionPrompt");
 
 		dlError = dlerror();
-		if (dlError != NULL) {
-			// Could not load the AXIsProcessTrustedWithOptions function!
-			logger(LOG_LEVEL_WARN, "%s [%u]: %s.\n",
-					__FUNCTION__, __LINE__, dlError);
-		} else if (kAXTrustedCheckOptionPrompt_t != NULL) {
+		if (kAXTrustedCheckOptionPrompt_t != NULL && dlError == NULL) {
 			// New accessibility API 10.9 and later.
 			const void * keys[] = { *kAXTrustedCheckOptionPrompt_t };
 			const void * values[] = { kCFBooleanTrue };
@@ -75,29 +96,25 @@ bool is_accessibility_enabled() {
 
 			is_enabled = (*AXIsProcessTrustedWithOptions_t)(options);
 		}
-	} else {
-		if (dlError != NULL) {
-    		logger(LOG_LEVEL_WARN, "%s [%u]: %s.\n",
-    				__FUNCTION__, __LINE__, dlError);
-    	}
-
-		logger(LOG_LEVEL_DEBUG, "%s [%u]: AXIsProcessTrustedWithOptions not found.\n",
-					__FUNCTION__, __LINE__);
-
-		logger(LOG_LEVEL_DEBUG, "%s [%u]: Falling back to AXAPIEnabled().\n",
-				__FUNCTION__, __LINE__);
-		
-		// Old accessibility check 10.8 and older.
-		Boolean (*AXAPIEnabled_f)();
-		*(void **) (&AXAPIEnabled_f) = dlsym(RTLD_DEFAULT, "AXAPIEnabled");
-		dlError = dlerror();
+	}
+	#endif
+	else {
+		#ifndef USE_WEAK_IMPORT
 		if (dlError != NULL) {
 			// Could not load the AXIsProcessTrustedWithOptions function!
-			logger(LOG_LEVEL_WARN, "%s [%u]: %s.\n",
+			logger(LOG_LEVEL_DEBUG, "%s [%u]: %s.\n",
 					__FUNCTION__, __LINE__, dlError);
-		} else if (AXAPIEnabled_f != NULL) {
-			is_enabled = (*AXAPIEnabled_f)();
 		}
+		#endif
+		
+		logger(LOG_LEVEL_DEBUG, "%s [%u]: Weak import AXIsProcessTrustedWithOptions not found.\n",
+					__FUNCTION__, __LINE__, dlError);
+
+		logger(LOG_LEVEL_DEBUG, "%s [%u]: Falling back to AXAPIEnabled().\n",
+				__FUNCTION__, __LINE__, dlError);
+		
+		// Old accessibility check 10.8 and older.
+		is_enabled = AXAPIEnabled();
 	}
 
 	return is_enabled;

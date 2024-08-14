@@ -1,5 +1,5 @@
 /* libUIOHook: Cross-platfrom userland keyboard and mouse hooking.
- * Copyright (C) 2006-2017 Alexander Barker.  All Rights Received.
+ * Copyright (C) 2006-2016 Alexander Barker.  All Rights Received.
  * https://github.com/kwhat/libuiohook/
  *
  * libUIOHook is free software: you can redistribute it and/or modify
@@ -99,8 +99,6 @@ static struct xkb_state *state = NULL;
 
 // Virtual event pointer.
 static uiohook_event event;
-
-static bool grab_enabled = false;
 
 // Event dispatch callback.
 static dispatcher_t dispatcher = NULL;
@@ -268,7 +266,6 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 	uint64_t timestamp = (uint64_t) recorded_data->server_time;
 
 	if (recorded_data->category == XRecordStartOfData) {
-
 		// Populate the hook start event.
 		event.time = timestamp;
 		event.reserved = 0x00;
@@ -306,18 +303,6 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 			keysym = keycode_to_keysym(keycode, data->event.u.keyButtonPointer.state);
 			#endif
 
-			// Check to make sure the key is printable.
-			uint16_t buffer[2];
-			size_t count =  0;
-			#ifdef USE_XKBCOMMON
-			if (state != NULL) {
-				count = keycode_to_unicode(state, keycode, buffer, sizeof(buffer) / sizeof(uint16_t));
-			}
-			#else
-			count = keysym_to_unicode(keysym, buffer, sizeof(buffer) / sizeof(uint16_t));
-			#endif
-
-
 			unsigned short int scancode = keycode_to_scancode(keycode);
 
 			// TODO If you have a better suggestion for this ugly, let me know.
@@ -332,9 +317,8 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 			xkb_state_update_key(state, keycode, XKB_KEY_DOWN);
 			initialize_locks();
 
-
 			if ((get_modifiers() & MASK_NUM_LOCK) == 0) {
-				switch (scancode) {
+                switch (scancode) {
 					case VC_KP_SEPARATOR:
 					case VC_KP_1:
 					case VC_KP_2:
@@ -348,7 +332,7 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 					case VC_KP_9:
 						scancode |= 0xEE00;
 						break;
-				}
+                }
 			}
 
 			// Populate key pressed event.
@@ -370,8 +354,19 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 
 			// If the pressed event was not consumed...
 			if (event.reserved ^ 0x01) {
-				unsigned int i = 0;
-				for (i = 0; i < count; i++) {
+				uint16_t buffer[2];
+			    size_t count =  0;
+
+				// Check to make sure the key is printable.
+				#ifdef USE_XKBCOMMON
+				if (state != NULL) {
+					count = keycode_to_unicode(state, keycode, buffer, sizeof(buffer) / sizeof(uint16_t));
+				}
+				#else
+				count = keysym_to_unicode(keysym, buffer, sizeof(buffer) / sizeof(uint16_t));
+				#endif
+
+				for (unsigned int i = 0; i < count; i++) {
 					// Populate key typed event.
 					event.time = timestamp;
 					event.reserved = 0x00;
@@ -401,16 +396,6 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 			}
 			#else
 			keysym = keycode_to_keysym(keycode, data->event.u.keyButtonPointer.state);
-			#endif
-
-			// Check to make sure the key is printable.
-			uint16_t buffer[2];
-			#ifdef USE_XKBCOMMON
-			if (state != NULL) {
-				keycode_to_unicode(state, keycode, buffer, sizeof(buffer) / sizeof(uint16_t));
-			}
-			#else
-			keysym_to_unicode(keysym, buffer, sizeof(buffer) / sizeof(uint16_t));
 			#endif
 
 			unsigned short int scancode = keycode_to_scancode(keycode);
@@ -756,16 +741,16 @@ void hook_event_proc(XPointer closeure, XRecordInterceptData *recorded_data) {
 			if (hook->input.mouse.click.count != 0 && (long int) (timestamp - hook->input.mouse.click.time) > hook_get_multi_click_time()) {
 				hook->input.mouse.click.count = 0;
 			}
-
+			
 			// Populate mouse move event.
 			event.time = timestamp;
 			event.reserved = 0x00;
 
 			event.mask = get_modifiers();
 
-			// Check the upper half of virtual modifiers for non-zero values and set the mouse
-			// dragged flag.  The last 3 bits are reserved for lock masks.
-			hook->input.mouse.is_dragged = ((event.mask & 0x1F00) > 0);
+			// Check the upper half of virtual modifiers for non-zero
+			// values and set the mouse dragged flag.
+			hook->input.mouse.is_dragged = (event.mask >> 8 > 0);
 			if (hook->input.mouse.is_dragged) {
 				// Create Mouse Dragged event.
 				event.type = EVENT_MOUSE_DRAGGED;
@@ -1043,6 +1028,11 @@ static int xrecord_start() {
 			xkb_context_unref(hook->input.context);
 			hook->input.context = NULL;
 		}
+
+		if (hook->input.connection != NULL) {
+			xcb_disconnect(hook->input.connection);
+			hook->input.connection = NULL;
+		}
 		#endif
 	}
 	else {
@@ -1065,46 +1055,6 @@ static int xrecord_start() {
 	}
 
 	return status;
-}
-
-static void enable_grab_mouse() {
-	unsigned int masks = ButtonPressMask | ButtonReleaseMask;
-
-	Display* display = hook->ctrl.display;
-	Window win = XDefaultRootWindow(hook->ctrl.display);
-	int status = XGrabPointer(display, win, true, masks, GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-
-	// set grab_enabled to true only if XGrabPointer success because sometimes XGrabPointer return AlreadyGrabbed.
-	if (status == GrabSuccess) {
-		grab_enabled = true;
-		logger(LOG_LEVEL_INFO,	"%s [%u]: Grab mouse click enabled.\n",
-			__FUNCTION__, __LINE__);
-	} else {
-		logger(LOG_LEVEL_WARN,	"%s [%u]: Grab mouse click is not enabled.\n",
-			__FUNCTION__, __LINE__);
-	}
-}
-
-static void disable_grab_mouse() {
-	// Make sure the data display is synchronized to prevent late event delivery!
-	// See Bug 42356 for more information.
-	// https://bugs.freedesktop.org/show_bug.cgi?id=42356#c4
-	XSynchronize(hook->ctrl.display, True);
-	XUngrabPointer(hook->ctrl.display, CurrentTime);
-	grab_enabled = false;
-	logger(LOG_LEVEL_INFO,	"%s [%u]: Grab mouse click disabled.\n",
-			__FUNCTION__, __LINE__);
-}
-
-UIOHOOK_API void grab_mouse_click(bool enable) {
-	if(grab_enabled == enable) {
-		return;
-	}
-	if(enable) {
-		enable_grab_mouse();
-	} else {
-		disable_grab_mouse();
-	}
 }
 
 UIOHOOK_API int hook_run() {
@@ -1178,9 +1128,11 @@ UIOHOOK_API int hook_stop() {
 
 			status = UIOHOOK_ERROR_OUT_OF_MEMORY;
 		}
+
+		return status;
 	}
 
-	logger(LOG_LEVEL_DEBUG, "%s [%u]: Status: %#X.\n",
+	logger(LOG_LEVEL_DEBUG,	"%s [%u]: Status: %#X.\n",
 			__FUNCTION__, __LINE__, status);
 
 	return status;

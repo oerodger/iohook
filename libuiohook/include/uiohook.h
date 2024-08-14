@@ -1,5 +1,5 @@
 /* libUIOHook: Cross-platfrom userland keyboard and mouse hooking.
- * Copyright (C) 2006-2017 Alexander Barker.  All Rights Received.
+ * Copyright (C) 2006-2016 Alexander Barker.  All Rights Received.
  * https://github.com/kwhat/libuiohook/
  *
  * libUIOHook is free software: you can redistribute it and/or modify
@@ -427,8 +427,6 @@ extern "C" {
 
 	// Withdraw the event hook.
 	UIOHOOK_API int hook_stop();
-
-	UIOHOOK_API void grab_mouse_click(bool enable);
 
 	// Retrieves an array of screen data for each available monitor.
 	UIOHOOK_API screen_data* hook_create_screen_info(unsigned char *count);

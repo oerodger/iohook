@@ -1,5 +1,5 @@
 /* libUIOHook: Cross-platfrom userland keyboard and mouse hooking.
- * Copyright (C) 2006-2017 Alexander Barker.  All Rights Received.
+ * Copyright (C) 2006-2016 Alexander Barker.  All Rights Received.
  * https://github.com/kwhat/libuiohook/
  *
  * libUIOHook is free software: you can redistribute it and/or modify
@@ -1941,8 +1941,7 @@ void load_input_helper(Display *disp) {
 			keysym_per_keycode--;
 
 			// Loop over the modifier map to find out if/where shift and caps locks are set.
-			int i = 0;
-			for (i = LockMapIndex; i < LockMapIndex + modifierMap->max_keypermod && !is_caps_lock; i++) {
+			for (int i = LockMapIndex; i < LockMapIndex + modifierMap->max_keypermod && !is_caps_lock; i++) {
 				if (capsLock != 0 && modifierMap->modifiermap[i] == capsLock) {
 					is_caps_lock = true;
 					is_shift_lock = false;
